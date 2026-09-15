@@ -1,0 +1,20 @@
+{
+  "name": "E2_50pct_wd003",
+  "description": "Weak-regularisation calibration: division mod 97, 50% training data, weight decay 0.03",
+  "seed": 0,
+  "train_data_pct": 50,
+  "weight_decay": 0.03,
+  "max_lr": 0.001,
+  "max_steps": 200000,
+  "last_logged_step": 82830,
+  "runtime_seconds": 3507.98,
+  "termination_reason": "ACCURACY_THRESHOLD_REACHED",
+  "train99_step": 620,
+  "val99_step": 81210,
+  "grokking_delay_steps": 80590,
+  "val_to_train_timing_ratio": 130.98387096774192,
+  "latest_train_accuracy": 100.0,
+  "latest_val_accuracy": 99.46305847167969,
+  "verdict": "STRONG_DELAYED_GENERALISATION",
+  "run_directory": "C:\\Users\\Ajay\\Documents\\Thesis\\runs\\boundary_calibration_20260915_180629\\E2_50pct_wd003"
+}

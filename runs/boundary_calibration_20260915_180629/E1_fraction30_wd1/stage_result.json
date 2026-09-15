@@ -1,0 +1,20 @@
+{
+  "name": "E1_fraction30_wd1",
+  "description": "Low-data calibration: division mod 97, 30% training data, weight decay 1",
+  "seed": 0,
+  "train_data_pct": 30,
+  "weight_decay": 1.0,
+  "max_lr": 0.001,
+  "max_steps": 150000,
+  "last_logged_step": 12054,
+  "runtime_seconds": 500.89,
+  "termination_reason": "ACCURACY_THRESHOLD_REACHED",
+  "train99_step": 414,
+  "val99_step": 11820,
+  "grokking_delay_steps": 11406,
+  "val_to_train_timing_ratio": 28.55072463768116,
+  "latest_train_accuracy": 100.0,
+  "latest_val_accuracy": 100.0,
+  "verdict": "STRONG_DELAYED_GENERALISATION",
+  "run_directory": "C:\\Users\\Ajay\\Documents\\Thesis\\runs\\boundary_calibration_20260915_180629\\E1_fraction30_wd1"
+}
