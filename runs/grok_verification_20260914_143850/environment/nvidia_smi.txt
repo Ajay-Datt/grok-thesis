@@ -1,0 +1,39 @@
+Mon Sep 14 14:38:51 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 616.56                 KMD Version: 616.56        CUDA UMD Version: 13.4     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                  Driver-Model | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GeForce RTX 3060 Ti   WDDM  |   00000000:06:00.0  On |                  N/A |
+| 53%   43C    P0             50W /  200W |    1812MiB /   8192MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|    0   N/A  N/A            7472    C+G   C:\Windows\explorer.exe               N/A      |
+|    0   N/A  N/A            8000    C+G   ...2txyewy\CrossDeviceResume.exe      N/A      |
+|    0   N/A  N/A            8092    C+G   ...Chrome\Application\chrome.exe      N/A      |
+|    0   N/A  N/A            8268    C+G   ....0.4191.66\msedgewebview2.exe      N/A      |
+|    0   N/A  N/A            8612    C+G   ..._cw5n1h2txyewy\SearchHost.exe      N/A      |
+|    0   N/A  N/A            8636    C+G   ...y\StartMenuExperienceHost.exe      N/A      |
+|    0   N/A  N/A            8884    C+G   ...SnippingTool\SnippingTool.exe      N/A      |
+|    0   N/A  N/A            9676    C+G   ...indows\System32\ShellHost.exe      N/A      |
+|    0   N/A  N/A           10524    C+G   ...Chrome\Application\chrome.exe      N/A      |
+|    0   N/A  N/A           10664    C+G   ...Chrome\Application\chrome.exe      N/A      |
+|    0   N/A  N/A           10752    C+G   ...App_cw5n1h2txyewy\LockApp.exe      N/A      |
+|    0   N/A  N/A           12380    C+G   ...IA App\CEF\NVIDIA Overlay.exe      N/A      |
+|    0   N/A  N/A           12908    C+G   ...IA App\CEF\NVIDIA Overlay.exe      N/A      |
+|    0   N/A  N/A           14288    C+G   ...xyewy\ShellExperienceHost.exe      N/A      |
+|    0   N/A  N/A           14936    C+G   ...cord\app-1.0.9257\Discord.exe      N/A      |
+|    0   N/A  N/A           15612    C+G   ...ms\Microsoft VS Code\Code.exe      N/A      |
+|    0   N/A  N/A           15904    C+G   ...zer Central\Razer Central.exe      N/A      |
+|    0   N/A  N/A           16108    C+G   ...pp-4.0.821\RazerAppEngine.exe      N/A      |
+|    0   N/A  N/A           18264    C+G   ...yb3d8bbwe\WindowsTerminal.exe      N/A      |
++-----------------------------------------------------------------------------------------+
+

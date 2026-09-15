@@ -1,0 +1,19 @@
+{
+  "name": "B_high_data_80pct",
+  "description": "High-data control: division mod 97, 80% training data, weight decay 1",
+  "seed": 0,
+  "train_data_pct": 80,
+  "weight_decay": 1,
+  "max_steps": 30000,
+  "last_logged_step": 29849,
+  "runtime_seconds": 1265.88,
+  "termination_reason": "MAX_STEPS_REACHED",
+  "train99_step": 6000,
+  "val99_step": 10800,
+  "grokking_delay_steps": 4800,
+  "val_to_train_timing_ratio": 1.8,
+  "latest_train_accuracy": 92.49664306640625,
+  "latest_val_accuracy": 91.0311508178711,
+  "verdict": "DELAYED_GENERALISATION",
+  "run_directory": "C:\\Users\\Ajay\\Documents\\Thesis\\runs\\grok_verification_20260914_143850\\B_high_data_80pct"
+}

@@ -1,0 +1,14 @@
+{
+  "source_checkpoint": "C:\\Users\\Ajay\\Documents\\Thesis\\runs\\grok_verification_20260914_143850\\C_canonical_no_decay\\checkpoints\\epoch_8192.ckpt",
+  "resume_start_step": 81930,
+  "resume_start_epoch": 8193,
+  "final_step": 82811,
+  "runtime_seconds": 36.39249539375305,
+  "termination_reason": "MAX_STEPS_REACHED",
+  "train99_during_resume": 81930,
+  "val99_step": null,
+  "final_train_accuracy": 99.76374816894531,
+  "final_validation_accuracy": 6.378866195678711,
+  "output_directory": "C:\\Users\\Ajay\\Documents\\Thesis\\runs\\trial3_canonical_resumed_20260915_082059",
+  "final_checkpoint": "C:\\Users\\Ajay\\Documents\\Thesis\\runs\\trial3_canonical_resumed_20260915_082059\\checkpoints\\final_step_82811.ckpt"
+}
