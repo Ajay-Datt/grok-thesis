@@ -1,0 +1,19 @@
+{
+  "name": "D4_fraction60_wd1",
+  "description": "Training-fraction calibration: division mod 97, 60% training data, weight decay 1",
+  "seed": 0,
+  "train_data_pct": 60,
+  "weight_decay": 1.0,
+  "max_steps": 50000,
+  "last_logged_step": 4201,
+  "runtime_seconds": 200.28,
+  "termination_reason": "ACCURACY_THRESHOLD_REACHED",
+  "train99_step": 957,
+  "val99_step": 2695,
+  "grokking_delay_steps": 1738,
+  "val_to_train_timing_ratio": 2.8160919540229883,
+  "latest_train_accuracy": 100.0,
+  "latest_val_accuracy": 100.0,
+  "verdict": "DELAYED_GENERALISATION",
+  "run_directory": "C:\\Users\\Ajay\\Documents\\Thesis\\runs\\calibration_20260915_151232\\D4_fraction60_wd1"
+}

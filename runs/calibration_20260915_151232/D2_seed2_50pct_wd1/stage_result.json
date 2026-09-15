@@ -1,0 +1,19 @@
+{
+  "name": "D2_seed2_50pct_wd1",
+  "description": "Seed robustness: division mod 97, 50% training data, weight decay 1, seed 2",
+  "seed": 2,
+  "train_data_pct": 50,
+  "weight_decay": 1.0,
+  "max_steps": 50000,
+  "last_logged_step": 5210,
+  "runtime_seconds": 225.33,
+  "termination_reason": "ACCURACY_THRESHOLD_REACHED",
+  "train99_step": 1060,
+  "val99_step": 3720,
+  "grokking_delay_steps": 2660,
+  "val_to_train_timing_ratio": 3.509433962264151,
+  "latest_train_accuracy": 100.0,
+  "latest_val_accuracy": 99.95704650878906,
+  "verdict": "DELAYED_GENERALISATION",
+  "run_directory": "C:\\Users\\Ajay\\Documents\\Thesis\\runs\\calibration_20260915_151232\\D2_seed2_50pct_wd1"
+}
