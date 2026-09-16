@@ -1,0 +1,38 @@
+{
+  "suite_name": "thesis_architecture_suite_v1",
+  "description": "Main thesis architecture experiments after grokking calibration.",
+  "baseline": {
+    "math_operator": "/",
+    "train_data_pct": 50,
+    "max_lr": 0.001,
+    "weight_decay": 0.1,
+    "weight_decay_kind": "to_zero",
+    "n_layers": 2,
+    "n_heads": 4,
+    "d_model": 128,
+    "dropout": 0.0,
+    "non_linearity": "relu",
+    "max_steps": 1000000,
+    "gpu": 0
+  },
+  "seeds": [0, 1, 2],
+  "checkpoint_every_steps": 2500,
+  "candidate_success_streak": 2,
+  "confirmation_success_streak": 3,
+  "post_grok_confirmation_steps": 5000,
+  "collapse_threshold_pct": 90.0,
+  "max_auto_retries": 3,
+  "retry_delay_seconds": 20,
+  "experiments": {
+    "attention_heads": [1, 2, 4, 8],
+    "depth_fixed_width": [1, 2, 3, 4, 6],
+    "width_fixed_depth": [64, 128, 256],
+    "parameter_matched_depths": [1, 2, 3, 4, 6],
+    "parameter_match_candidate_width_min": 32,
+    "parameter_match_candidate_width_max": 256,
+    "parameter_match_width_step": 4,
+    "regularisation_depths": [1, 2, 4],
+    "regularisation_weight_decays": [0.03, 0.1, 0.3],
+    "activations": ["relu", "gelu"]
+  }
+}
