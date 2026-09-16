@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import math
 import re
 
 import matplotlib.pyplot as plt
@@ -10,23 +11,24 @@ import pandas as pd
 # CONFIGURATION
 # ============================================================
 
-# Folder containing T1_addition_seed0, T2_subtraction_seed0, etc.
+# Change ONLY this path when plotting a different experiment suite.
 SUITE_DIR = Path(
     r"C:\Users\Ajay\Documents\Thesis\runs"
-    r"\task_comparison_overnight_20260916_012229"
+    r"\boundary_calibration_20260915_180629"
 )
 
-# Figures are written here.
+# All generated figures are saved here.
 OUTPUT_DIR = SUITE_DIR / "plots"
 
 ACCURACY_THRESHOLD = 99.0
+REQUIRED_CONSECUTIVE_SUCCESSES = 2
 
-# Save both PNG and PDF versions.
+# Save both PNG and PDF copies.
 SAVE_PDF = True
 
 # Plot appearance.
-TRAIN_COLOUR = "#e53935"   # red, similar to iconic grokking figure
-VAL_COLOUR = "#2e7d32"     # green
+TRAIN_COLOUR = "#e53935"
+VAL_COLOUR = "#2e7d32"
 
 TRAIN_LINEWIDTH = 2.0
 VAL_LINEWIDTH = 2.0
@@ -35,115 +37,70 @@ DPI = 250
 
 
 # ============================================================
-# TASK NAMES
-# ============================================================
-
-OPERATION_NAMES = {
-    "addition": "Modular Addition",
-    "subtraction": "Modular Subtraction",
-    "multiplication": "Modular Multiplication",
-    "division": "Modular Division",
-}
-
-
-# ============================================================
 # HELPERS
 # ============================================================
 
 def run_sort_key(path: Path):
     """
-    Sort T1, T2, ..., T8 numerically.
+    Sort experiment folders numerically.
+
+    Examples:
+        E1_fraction30_wd1
+        E2_50pct_wd003
+        T1_addition_seed0
+        D7_50pct_wd01
+
+    E1 comes before E2, T1 before T2, etc.
     """
 
     match = re.match(
-        r"T(\d+)_",
+        r"^[A-Za-z]+(\d+)",
         path.name,
     )
 
     if match:
         return int(match.group(1))
 
-    return 999
+    return 999999
 
 
-def parse_run_name(run_name: str):
+def clean_name(name: str):
     """
-    Example:
-
-        T1_addition_seed0
-
-    becomes:
-
-        task_number = 1
-        operation = addition
-        seed = 0
+    Convert a folder name into a readable fallback title.
     """
 
-    match = re.match(
-        r"T(\d+)_([A-Za-z]+)_seed(\d+)",
-        run_name,
-    )
-
-    if not match:
-        return None, run_name, None
-
-    task_number = int(
-        match.group(1)
-    )
-
-    operation = (
-        match.group(2).lower()
-    )
-
-    seed = int(
-        match.group(3)
-    )
-
-    return (
-        task_number,
-        operation,
-        seed,
-    )
+    return name.replace("_", " ")
 
 
-def first_threshold_step(
-    df,
-    column,
-    threshold=99.0,
-):
+def get_first_present(dictionary, keys, default=None):
     """
-    Return the first optimisation step where the requested
-    accuracy reaches the threshold.
+    Return the first non-None value found in a dictionary.
     """
 
-    if column not in df.columns:
-        return None
+    for key in keys:
+        if key in dictionary:
+            value = dictionary[key]
 
-    valid = df[
-        df[column].notna()
-        & (df[column] >= threshold)
-    ]
+            if value is not None:
+                return value
 
-    if valid.empty:
-        return None
-
-    return int(
-        valid.iloc[0]["step"]
-    )
+    return default
 
 
-def load_stage_result(run_dir):
+# ============================================================
+# LOAD FILES
+# ============================================================
+
+def load_stage_result(run_dir: Path):
     """
-    Load stage_result.json if available.
+    Load stage_result.json if present.
 
-    This contains the stable-threshold results produced by the
-    overnight experiment script.
+    Older and newer experiment scripts may store slightly
+    different fields, so this plotter does not depend on it
+    being present.
     """
 
-    result_file = (
-        run_dir
-        / "stage_result.json"
-    )
+    result_file = run_dir / "stage_result.json"
 
     if not result_file.exists():
         return {}
@@ -153,11 +110,9 @@ def load_stage_result(run_dir):
             "r",
             encoding="utf-8",
         ) as handle:
-
             return json.load(handle)
 
     except Exception as exc:
-
         print(
             f"WARNING: could not read "
             f"{result_file}: {exc}"
@@ -166,29 +121,21 @@ def load_stage_result(run_dir):
         return {}
 
 
-def load_metrics(run_dir):
+def load_metrics(run_dir: Path):
     """
-    Load analysis_metrics.csv and ensure optimisation steps
-    are valid and ordered.
+    Load analysis_metrics.csv.
     """
 
-    metrics_file = (
-        run_dir
-        / "analysis_metrics.csv"
-    )
+    metrics_file = run_dir / "analysis_metrics.csv"
 
     if not metrics_file.exists():
-
         raise FileNotFoundError(
             f"Missing: {metrics_file}"
         )
 
-    df = pd.read_csv(
-        metrics_file
-    )
+    df = pd.read_csv(metrics_file)
 
     if "step" not in df.columns:
-
         raise ValueError(
             f"'step' column missing from "
             f"{metrics_file}"
@@ -206,32 +153,31 @@ def load_metrics(run_dir):
         .copy()
     )
 
-    df["step"] = (
-        df["step"]
-        .astype(int)
-    )
+    df["step"] = df["step"].astype(int)
 
     return df
 
 
+# ============================================================
+# ACCURACY SERIES
+# ============================================================
+
 def get_accuracy_series(df):
     """
-    Extract exact full-training and validation accuracy data.
+    Extract full-training and validation accuracy.
 
-    analysis_metrics.csv contains sparse values, so training
-    and validation are filtered independently.
+    analysis_metrics.csv may have sparse rows, so each series
+    is filtered independently.
     """
 
     if "full_train_acc" not in df.columns:
-
         raise ValueError(
-            "'full_train_acc' missing."
+            "'full_train_acc' column missing."
         )
 
     if "val_accuracy" not in df.columns:
-
         raise ValueError(
-            "'val_accuracy' missing."
+            "'val_accuracy' column missing."
         )
 
     train = (
@@ -253,88 +199,400 @@ def get_accuracy_series(df):
     return train, val
 
 
-# ============================================================
-# INDIVIDUAL GROKKING PLOT
-# ============================================================
-
-def make_individual_plot(run_dir):
+def first_threshold_step(
+    df,
+    column,
+    threshold=ACCURACY_THRESHOLD,
+):
     """
-    Create one iconic grokking-style graph for a run.
+    First step where a metric reaches the threshold.
     """
 
-    (
-        task_number,
-        operation,
-        seed,
-    ) = parse_run_name(
-        run_dir.name
+    if column not in df.columns:
+        return None
+
+    valid = df[
+        df[column].notna()
+        & (df[column] >= threshold)
+    ]
+
+    if valid.empty:
+        return None
+
+    return int(
+        valid.iloc[0]["step"]
     )
 
-    operation_title = (
-        OPERATION_NAMES.get(
-            operation,
-            operation.title(),
+
+# ============================================================
+# STABLE GROKKING CALCULATION
+# ============================================================
+
+def build_complete_evaluation_rows(df):
+    """
+    Build rows where both full training accuracy and
+    validation accuracy exist for the same optimisation step.
+    """
+
+    train = (
+        df[
+            ["step", "full_train_acc"]
+        ]
+        .dropna()
+        .drop_duplicates(
+            subset=["step"],
+            keep="last",
         )
     )
 
-    df = load_metrics(
-        run_dir
+    val = (
+        df[
+            ["step", "val_accuracy"]
+        ]
+        .dropna()
+        .drop_duplicates(
+            subset=["step"],
+            keep="last",
+        )
     )
 
-    train, val = (
-        get_accuracy_series(df)
+    merged = pd.merge(
+        train,
+        val,
+        on="step",
+        how="inner",
     )
+
+    return merged.sort_values("step")
+
+
+def first_stable_joint_step(
+    df,
+    threshold=ACCURACY_THRESHOLD,
+    required=REQUIRED_CONSECUTIVE_SUCCESSES,
+):
+    """
+    Find the first step beginning a run of N consecutive
+    evaluations where train AND validation are both >=99%.
+    """
+
+    evaluations = build_complete_evaluation_rows(
+        df
+    )
+
+    if evaluations.empty:
+        return None
+
+    streak = 0
+    streak_start = None
+
+    for _, row in evaluations.iterrows():
+
+        successful = (
+            row["full_train_acc"] >= threshold
+            and row["val_accuracy"] >= threshold
+        )
+
+        if successful:
+
+            if streak == 0:
+                streak_start = int(
+                    row["step"]
+                )
+
+            streak += 1
+
+            if streak >= required:
+                return streak_start
+
+        else:
+            streak = 0
+            streak_start = None
+
+    return None
+
+
+# ============================================================
+# RUN METADATA
+# ============================================================
+
+def get_run_metadata(run_dir, df):
+    """
+    Gather useful metadata from stage_result.json.
+
+    Falls back safely when older result files use different
+    field names.
+    """
 
     result = load_stage_result(
         run_dir
+    )
+
+    description = get_first_present(
+        result,
+        [
+            "description",
+            "experiment_description",
+        ],
+        default=None,
+    )
+
+    train_pct = get_first_present(
+        result,
+        [
+            "train_data_pct",
+            "training_percentage",
+            "train_percentage",
+        ],
+        default=None,
+    )
+
+    weight_decay = get_first_present(
+        result,
+        [
+            "weight_decay",
+        ],
+        default=None,
+    )
+
+    learning_rate = get_first_present(
+        result,
+        [
+            "max_lr",
+            "learning_rate",
+            "lr",
+        ],
+        default=None,
+    )
+
+    seed = get_first_present(
+        result,
+        [
+            "seed",
+            "random_seed",
+        ],
+        default=None,
+    )
+
+    operator = get_first_present(
+        result,
+        [
+            "operator",
+            "math_operator",
+        ],
+        default=None,
     )
 
     # --------------------------------------------------------
     # Thresholds
     # --------------------------------------------------------
 
-    train99 = result.get(
-        "first_train99_step"
+    train99 = get_first_present(
+        result,
+        [
+            "first_train99_step",
+            "T_train99",
+            "train99_step",
+            "train99",
+        ],
+        default=None,
     )
 
-    val99 = result.get(
-        "first_val99_step"
+    val99 = get_first_present(
+        result,
+        [
+            "first_val99_step",
+            "T_val99",
+            "val99_step",
+            "val99",
+        ],
+        default=None,
     )
 
-    stable99 = result.get(
-        "stable_joint99_step"
+    stable99 = get_first_present(
+        result,
+        [
+            "stable_joint99_step",
+            "stable_val99_step",
+            "confirmed_grokking_step",
+        ],
+        default=None,
     )
 
-    stable_delay = result.get(
-        "stable_grokking_delay_steps"
-    )
-
-    # Fallback to calculation directly from CSV.
+    # Calculate directly from metrics if missing.
     if train99 is None:
-
         train99 = first_threshold_step(
             df,
             "full_train_acc",
-            ACCURACY_THRESHOLD,
         )
 
     if val99 is None:
-
         val99 = first_threshold_step(
             df,
             "val_accuracy",
-            ACCURACY_THRESHOLD,
         )
 
-    # --------------------------------------------------------
-    # Create figure
-    # --------------------------------------------------------
+    if stable99 is None:
+        stable99 = first_stable_joint_step(
+            df
+        )
+
+    if train99 is not None:
+        train99 = int(train99)
+
+    if val99 is not None:
+        val99 = int(val99)
+
+    if stable99 is not None:
+        stable99 = int(stable99)
+
+    first_delay = None
+
+    if (
+        train99 is not None
+        and val99 is not None
+    ):
+        first_delay = (
+            val99
+            - train99
+        )
+
+    stable_delay = None
+
+    if (
+        train99 is not None
+        and stable99 is not None
+    ):
+        stable_delay = (
+            stable99
+            - train99
+        )
+
+    return {
+        "description": description,
+        "train_pct": train_pct,
+        "weight_decay": weight_decay,
+        "learning_rate": learning_rate,
+        "seed": seed,
+        "operator": operator,
+
+        "train99": train99,
+        "val99": val99,
+        "stable99": stable99,
+
+        "first_delay": first_delay,
+        "stable_delay": stable_delay,
+
+        "result": result,
+    }
+
+
+# ============================================================
+# TITLES
+# ============================================================
+
+def make_plot_title(
+    run_dir,
+    metadata,
+):
+    """
+    Prefer the experiment description from stage_result.json.
+    Otherwise use a readable version of the directory name.
+    """
+
+    description = metadata[
+        "description"
+    ]
+
+    if description:
+        return description
+
+    return clean_name(
+        run_dir.name
+    )
+
+
+def make_short_title(
+    run_dir,
+    metadata,
+):
+    """
+    Short title for combined plots.
+    """
+
+    title = clean_name(
+        run_dir.name
+    )
+
+    stable_delay = metadata[
+        "stable_delay"
+    ]
+
+    if stable_delay is not None:
+        title += (
+            f"\nStable delay = "
+            f"{stable_delay:,} steps"
+        )
+
+    elif metadata["first_delay"] is not None:
+        title += (
+            f"\nFirst delay = "
+            f"{metadata['first_delay']:,} steps"
+        )
+
+    return title
+
+
+# ============================================================
+# INDIVIDUAL PLOT
+# ============================================================
+
+def make_individual_plot(run_dir):
+    """
+    Generate one full grokking-style plot.
+    """
+
+    df = load_metrics(
+        run_dir
+    )
+
+    train, val = get_accuracy_series(
+        df
+    )
+
+    metadata = get_run_metadata(
+        run_dir,
+        df,
+    )
+
+    train99 = metadata[
+        "train99"
+    ]
+
+    val99 = metadata[
+        "val99"
+    ]
+
+    stable99 = metadata[
+        "stable99"
+    ]
+
+    first_delay = metadata[
+        "first_delay"
+    ]
+
+    stable_delay = metadata[
+        "stable_delay"
+    ]
+
+    # ========================================================
+    # FIGURE
+    # ========================================================
 
     fig, ax = plt.subplots(
         figsize=(11, 7)
     )
 
-    # Exact raw curves.
     ax.plot(
         train["step"],
         train["full_train_acc"],
@@ -369,9 +627,11 @@ def make_individual_plot(run_dir):
         ),
     )
 
-    maximum_step = max(
-        train["step"].max(),
-        val["step"].max(),
+    maximum_step = int(
+        max(
+            train["step"].max(),
+            val["step"].max(),
+        )
     )
 
     ax.set_xlim(
@@ -395,9 +655,11 @@ def make_individual_plot(run_dir):
     )
 
     ax.set_title(
-        f"{operation_title} mod 97 "
-        f"(training on 50% of data, seed {seed})",
-        fontsize=16,
+        make_plot_title(
+            run_dir,
+            metadata,
+        ),
+        fontsize=15,
     )
 
     ax.grid(
@@ -418,7 +680,7 @@ def make_individual_plot(run_dir):
     )
 
     # --------------------------------------------------------
-    # 99% horizontal reference
+    # 99% reference
     # --------------------------------------------------------
 
     ax.axhline(
@@ -430,7 +692,7 @@ def make_individual_plot(run_dir):
     )
 
     # --------------------------------------------------------
-    # Train threshold marker
+    # Train threshold
     # --------------------------------------------------------
 
     if train99 is not None:
@@ -439,12 +701,18 @@ def make_individual_plot(run_dir):
             train99,
             color=TRAIN_COLOUR,
             linestyle="--",
-            linewidth=1.2,
-            alpha=0.75,
+            linewidth=1.1,
+            alpha=0.70,
         )
 
-        train_text_x = (
-            train99 * 2.3
+        train_text_x = min(
+            train99 * 2.5,
+            maximum_step / 3,
+        )
+
+        train_text_x = max(
+            train_text_x,
+            train99 * 1.2,
         )
 
         ax.annotate(
@@ -468,7 +736,7 @@ def make_individual_plot(run_dir):
         )
 
     # --------------------------------------------------------
-    # Validation threshold marker
+    # Validation threshold
     # --------------------------------------------------------
 
     if val99 is not None:
@@ -477,12 +745,12 @@ def make_individual_plot(run_dir):
             val99,
             color=VAL_COLOUR,
             linestyle="--",
-            linewidth=1.2,
-            alpha=0.75,
+            linewidth=1.1,
+            alpha=0.70,
         )
 
         val_text_x = max(
-            val99 / 4,
+            val99 / 5,
             minimum_step * 2,
         )
 
@@ -497,7 +765,7 @@ def make_individual_plot(run_dir):
             ),
             xytext=(
                 val_text_x,
-                65,
+                63,
             ),
             fontsize=10,
             arrowprops=dict(
@@ -507,38 +775,94 @@ def make_individual_plot(run_dir):
         )
 
     # --------------------------------------------------------
-    # Result text
+    # If validation did not reach 99%
+    # --------------------------------------------------------
+
+    if val99 is None:
+
+        if not val.empty:
+
+            last_val_step = int(
+                val.iloc[-1]["step"]
+            )
+
+            last_val_acc = float(
+                val.iloc[-1]["val_accuracy"]
+            )
+
+            ax.annotate(
+                (
+                    "validation did not reach 99%\n"
+                    f"last step = {last_val_step:,}\n"
+                    f"final val = {last_val_acc:.2f}%"
+                ),
+                xy=(
+                    last_val_step,
+                    last_val_acc,
+                ),
+                xytext=(
+                    max(
+                        last_val_step / 8,
+                        minimum_step * 2,
+                    ),
+                    55,
+                ),
+                fontsize=10,
+                arrowprops=dict(
+                    arrowstyle="->",
+                    linewidth=1,
+                ),
+            )
+
+    # --------------------------------------------------------
+    # Information box
     # --------------------------------------------------------
 
     information = []
 
-    if (
-        train99 is not None
-        and val99 is not None
-    ):
-
-        first_delay = (
-            val99
-            - train99
-        )
-
+    if first_delay is not None:
         information.append(
             f"First-crossing delay: "
             f"{first_delay:,} steps"
         )
 
     if stable99 is not None:
-
         information.append(
             f"Stable ≥99% step: "
             f"{stable99:,}"
         )
 
     if stable_delay is not None:
-
         information.append(
             f"Stable grokking delay: "
             f"{stable_delay:,} steps"
+        )
+
+    train_pct = metadata[
+        "train_pct"
+    ]
+
+    weight_decay = metadata[
+        "weight_decay"
+    ]
+
+    learning_rate = metadata[
+        "learning_rate"
+    ]
+
+    if train_pct is not None:
+        information.append(
+            f"Training data: {train_pct}%"
+        )
+
+    if weight_decay is not None:
+        information.append(
+            f"Weight decay: {weight_decay}"
+        )
+
+    if learning_rate is not None:
+        information.append(
+            f"Learning rate: {learning_rate}"
         )
 
     if information:
@@ -555,16 +879,16 @@ def make_individual_plot(run_dir):
             bbox=dict(
                 boxstyle="round",
                 facecolor="white",
-                alpha=0.8,
+                alpha=0.85,
                 edgecolor="lightgrey",
             ),
         )
 
     fig.tight_layout()
 
-    # --------------------------------------------------------
-    # Save
-    # --------------------------------------------------------
+    # ========================================================
+    # SAVE
+    # ========================================================
 
     filename_base = (
         f"{run_dir.name}"
@@ -602,96 +926,122 @@ def make_individual_plot(run_dir):
 
     return {
         "run": run_dir.name,
-        "task_number": task_number,
-        "operation": operation,
-        "seed": seed,
-        "train99": train99,
-        "val99": val99,
-        "stable99": stable99,
-        "stable_delay": stable_delay,
-        "png": str(png_path),
+
+        "description":
+            metadata["description"],
+
+        "train_pct":
+            metadata["train_pct"],
+
+        "weight_decay":
+            metadata["weight_decay"],
+
+        "learning_rate":
+            metadata["learning_rate"],
+
+        "seed":
+            metadata["seed"],
+
+        "operator":
+            metadata["operator"],
+
+        "train99":
+            train99,
+
+        "val99":
+            val99,
+
+        "stable99":
+            stable99,
+
+        "first_delay":
+            first_delay,
+
+        "stable_delay":
+            stable_delay,
+
+        "png":
+            str(png_path),
     }
 
 
 # ============================================================
-# COMBINED 8-PLOT FIGURE
+# COMBINED FIGURE
 # ============================================================
 
-def make_combined_figure(run_dirs):
+def make_combined_figure(
+    run_dirs,
+):
     """
-    Make one 4 x 2 figure containing all eight experiments.
+    Create one multi-panel figure containing every experiment
+    discovered in the suite.
     """
 
+    number_of_runs = len(
+        run_dirs
+    )
+
+    ncols = 2
+
+    nrows = math.ceil(
+        number_of_runs
+        / ncols
+    )
+
     fig, axes = plt.subplots(
-        nrows=4,
-        ncols=2,
-        figsize=(15, 20),
+        nrows=nrows,
+        ncols=ncols,
+        figsize=(
+            15,
+            5 * nrows,
+        ),
         sharey=True,
     )
 
-    axes = axes.flatten()
-
-    for ax, run_dir in zip(
+    # Handle one-row case safely.
+    if hasattr(
         axes,
-        run_dirs,
+        "flatten",
+    ):
+        axes = axes.flatten()
+
+    else:
+        axes = [axes]
+
+    for index, run_dir in enumerate(
+        run_dirs
     ):
 
-        (
-            task_number,
-            operation,
-            seed,
-        ) = parse_run_name(
-            run_dir.name
-        )
-
-        operation_title = (
-            OPERATION_NAMES.get(
-                operation,
-                operation.title(),
-            )
-        )
+        ax = axes[index]
 
         df = load_metrics(
             run_dir
         )
 
         train, val = (
-            get_accuracy_series(df)
-        )
-
-        result = load_stage_result(
-            run_dir
-        )
-
-        train99 = result.get(
-            "first_train99_step"
-        )
-
-        val99 = result.get(
-            "first_val99_step"
-        )
-
-        stable_delay = result.get(
-            "stable_grokking_delay_steps"
-        )
-
-        if train99 is None:
-
-            train99 = (
-                first_threshold_step(
-                    df,
-                    "full_train_acc",
-                )
+            get_accuracy_series(
+                df
             )
+        )
 
-        if val99 is None:
-
-            val99 = (
-                first_threshold_step(
-                    df,
-                    "val_accuracy",
-                )
+        metadata = (
+            get_run_metadata(
+                run_dir,
+                df,
             )
+        )
+
+        train99 = metadata[
+            "train99"
+        ]
+
+        val99 = metadata[
+            "val99"
+        ]
+
+        # ----------------------------------------------------
+        # Curves
+        # ----------------------------------------------------
 
         ax.plot(
             train["step"],
@@ -731,12 +1081,16 @@ def make_combined_figure(run_dirs):
         )
 
         ax.axhline(
-            99,
+            ACCURACY_THRESHOLD,
             color="grey",
             linestyle=":",
             linewidth=0.8,
             alpha=0.5,
         )
+
+        # ----------------------------------------------------
+        # Threshold lines
+        # ----------------------------------------------------
 
         if train99 is not None:
 
@@ -758,23 +1112,16 @@ def make_combined_figure(run_dirs):
                 alpha=0.65,
             )
 
-        title = (
-            f"T{task_number}: "
-            f"{operation_title}, "
-            f"seed {seed}"
-        )
-
-        if stable_delay is not None:
-
-            title += (
-                f"\n"
-                f"stable delay = "
-                f"{stable_delay:,} steps"
-            )
+        # ----------------------------------------------------
+        # Title
+        # ----------------------------------------------------
 
         ax.set_title(
-            title,
-            fontsize=12,
+            make_short_title(
+                run_dir,
+                metadata,
+            ),
+            fontsize=11,
         )
 
         ax.set_xlabel(
@@ -783,6 +1130,15 @@ def make_combined_figure(run_dirs):
 
         ax.set_ylabel(
             "Accuracy (%)"
+        )
+
+    # Hide unused panels.
+    for index in range(
+        number_of_runs,
+        len(axes),
+    ):
+        axes[index].axis(
+            "off"
         )
 
     # Shared legend.
@@ -801,10 +1157,8 @@ def make_combined_figure(run_dirs):
 
     fig.suptitle(
         (
-            "Grokking Across Modular Arithmetic Tasks\n"
-            "50% training data, "
-            "weight decay = 0.1, "
-            "learning rate = 0.001"
+            f"Grokking Experiment Suite\n"
+            f"{SUITE_DIR.name}"
         ),
         fontsize=18,
         y=0.995,
@@ -815,13 +1169,13 @@ def make_combined_figure(run_dirs):
             0,
             0,
             1,
-            0.97,
+            0.965,
         ]
     )
 
     png_path = (
         OUTPUT_DIR
-        / "all_8_task_comparison_grokking_curves.png"
+        / "combined_grokking_curves.png"
     )
 
     fig.savefig(
@@ -834,7 +1188,7 @@ def make_combined_figure(run_dirs):
 
         pdf_path = (
             OUTPUT_DIR
-            / "all_8_task_comparison_grokking_curves.pdf"
+            / "combined_grokking_curves.pdf"
         )
 
         fig.savefig(
@@ -853,7 +1207,12 @@ def make_combined_figure(run_dirs):
 # SUMMARY CSV
 # ============================================================
 
-def save_plot_summary(results):
+def save_plot_summary(
+    results,
+):
+    """
+    Save useful plotting / threshold results.
+    """
 
     summary = pd.DataFrame(
         results
@@ -875,17 +1234,68 @@ def save_plot_summary(results):
 
 
 # ============================================================
+# DISCOVER RUNS
+# ============================================================
+
+def discover_runs():
+    """
+    Find every immediate child directory containing an
+    analysis_metrics.csv file.
+
+    This means the script works with T*, D*, E*, etc.
+    """
+
+    if not SUITE_DIR.exists():
+
+        raise FileNotFoundError(
+            f"Suite directory does not exist:\n"
+            f"{SUITE_DIR}"
+        )
+
+    run_dirs = []
+
+    for path in SUITE_DIR.iterdir():
+
+        if not path.is_dir():
+            continue
+
+        metrics_file = (
+            path
+            / "analysis_metrics.csv"
+        )
+
+        if metrics_file.exists():
+            run_dirs.append(
+                path
+            )
+
+    return sorted(
+        run_dirs,
+        key=run_sort_key,
+    )
+
+
+# ============================================================
 # MAIN
 # ============================================================
 
 def main():
 
-    print("=" * 80)
-    print("GROKKING TASK-COMPARISON PLOTTER")
-    print("=" * 80)
+    print(
+        "=" * 80
+    )
 
     print(
-        f"Reading from:\n{SUITE_DIR}"
+        "GENERAL GROKKING EXPERIMENT PLOTTER"
+    )
+
+    print(
+        "=" * 80
+    )
+
+    print(
+        f"Reading from:\n"
+        f"{SUITE_DIR}"
     )
 
     OUTPUT_DIR.mkdir(
@@ -893,25 +1303,7 @@ def main():
         exist_ok=True,
     )
 
-    # Find experiment directories automatically.
-    run_dirs = sorted(
-        [
-            path
-            for path in SUITE_DIR.iterdir()
-            if (
-                path.is_dir()
-                and re.match(
-                    r"T\d+_",
-                    path.name,
-                )
-                and (
-                    path
-                    / "analysis_metrics.csv"
-                ).exists()
-            )
-        ],
-        key=run_sort_key,
-    )
+    run_dirs = discover_runs()
 
     if not run_dirs:
 
@@ -935,7 +1327,10 @@ def main():
 
     results = []
 
-    # Individual plots.
+    # --------------------------------------------------------
+    # Individual plots
+    # --------------------------------------------------------
+
     for run_dir in run_dirs:
 
         try:
@@ -954,25 +1349,49 @@ def main():
 
             print(
                 f"ERROR plotting "
-                f"{run_dir.name}: {exc}"
+                f"{run_dir.name}: "
+                f"{exc}"
             )
 
-    # Combined 8-run figure.
+    # --------------------------------------------------------
+    # Combined figure
+    # --------------------------------------------------------
+
     if run_dirs:
 
-        make_combined_figure(
-            run_dirs
-        )
+        try:
 
-    # Small CSV containing the important thresholds.
+            make_combined_figure(
+                run_dirs
+            )
+
+        except Exception as exc:
+
+            print(
+                "ERROR creating combined "
+                f"figure: {exc}"
+            )
+
+    # --------------------------------------------------------
+    # Summary
+    # --------------------------------------------------------
+
     save_plot_summary(
         results
     )
 
     print()
-    print("=" * 80)
-    print("DONE")
-    print("=" * 80)
+    print(
+        "=" * 80
+    )
+
+    print(
+        "DONE"
+    )
+
+    print(
+        "=" * 80
+    )
 
     print(
         f"Figures saved to:\n"
