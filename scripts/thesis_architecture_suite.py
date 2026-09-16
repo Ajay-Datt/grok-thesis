@@ -14,6 +14,9 @@ import os
 import subprocess
 import sys
 import time
+import threading
+import statistics
+from datetime import datetime, timedelta
 from copy import deepcopy
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -24,6 +27,244 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / "configs" / "thesis_architecture_suite.json"
 CHILD_SCRIPT = ROOT / "scripts" / "run_resumable_architecture_trial.py"
+
+
+ETA_REFRESH_SECONDS = 60
+RUNTIME_HISTORY_FILENAME = "runtime_history.json"
+
+
+def fmt_duration(seconds):
+    if seconds is None:
+        return "unknown"
+    seconds = max(0, int(seconds))
+    days, rem = divmod(seconds, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, secs = divmod(rem, 60)
+    if days:
+        return f"{days}d {hours:02d}:{minutes:02d}:{secs:02d}"
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
+def load_runtime_history(suite_dir: Path) -> Dict:
+    path = suite_dir / RUNTIME_HISTORY_FILENAME
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_runtime_history(suite_dir: Path, history: Dict):
+    path = suite_dir / RUNTIME_HISTORY_FILENAME
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(history, indent=2), encoding="utf-8")
+    tmp.replace(path)
+
+
+def read_trial_result(run_dir: Path) -> Dict:
+    path = run_dir / "trial_result.json"
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def register_attempt_runtime(
+    suite_dir: Path,
+    history: Dict,
+    run_name: str,
+    elapsed_seconds: float,
+    complete: bool,
+):
+    entry = history.setdefault(
+        run_name,
+        {
+            "observed_seconds": 0.0,
+            "attempt_count": 0,
+            "completed": False,
+        },
+    )
+    entry["observed_seconds"] = round(
+        float(entry.get("observed_seconds", 0.0)) + float(elapsed_seconds), 2
+    )
+    entry["attempt_count"] = int(entry.get("attempt_count", 0)) + 1
+    entry["completed"] = bool(complete)
+    entry["updated_at"] = datetime.now().isoformat(timespec="seconds")
+    save_runtime_history(suite_dir, history)
+
+
+def completed_runtime_samples(
+    suite_dir: Path,
+    manifest: List[Dict],
+    history: Dict,
+):
+    samples = []
+    for config in manifest:
+        run_name = config["run_name"]
+        run_dir = suite_dir / run_name
+        if not is_complete(run_dir):
+            continue
+
+        seconds = None
+        hist = history.get(run_name, {})
+        if float(hist.get("observed_seconds", 0.0) or 0.0) > 0:
+            seconds = float(hist["observed_seconds"])
+        else:
+            result = read_trial_result(run_dir)
+            fallback = result.get("runtime_this_attempt_seconds")
+            if fallback is not None:
+                try:
+                    seconds = float(fallback)
+                except Exception:
+                    seconds = None
+
+        if seconds is not None and seconds > 0:
+            samples.append(
+                {
+                    "run_name": run_name,
+                    "seconds": seconds,
+                    "phases": list(config.get("phases", [])),
+                }
+            )
+    return samples
+
+
+def estimate_run_seconds(config: Dict, samples) -> float:
+    if not samples:
+        return None
+
+    phases = set(config.get("phases", []))
+    phase_matches = [
+        s["seconds"]
+        for s in samples
+        if phases.intersection(set(s.get("phases", [])))
+    ]
+
+    if len(phase_matches) >= 2:
+        return float(statistics.median(phase_matches))
+
+    return float(statistics.median([s["seconds"] for s in samples]))
+
+
+def selected_completion_counts(suite_dir: Path, selected):
+    complete = sum(1 for _, c in selected if is_complete(suite_dir / c["run_name"]))
+    return complete, len(selected)
+
+
+def estimate_pending_seconds(
+    suite_dir: Path,
+    pending_configs: List[Dict],
+    manifest: List[Dict],
+    history: Dict,
+):
+    samples = completed_runtime_samples(suite_dir, manifest, history)
+    if not samples:
+        return None
+
+    total = 0.0
+    for config in pending_configs:
+        estimate = estimate_run_seconds(config, samples)
+        if estimate is None:
+            return None
+        total += estimate
+    return total
+
+
+def print_suite_eta(
+    suite_dir: Path,
+    selected,
+    manifest: List[Dict],
+    history: Dict,
+    prefix="ETA",
+):
+    complete, total = selected_completion_counts(suite_dir, selected)
+    pending = [c for _, c in selected if not is_complete(suite_dir / c["run_name"])]
+    pct = 100.0 * complete / total if total else 100.0
+    remaining = estimate_pending_seconds(suite_dir, pending, manifest, history)
+
+    if remaining is None:
+        print(
+            f"[{prefix}] progress {complete}/{total} ({pct:.1f}%) | "
+            "suite ETA: learning from completed runs"
+        )
+        return
+
+    finish = datetime.now() + timedelta(seconds=remaining)
+    print(
+        f"[{prefix}] progress {complete}/{total} ({pct:.1f}%) | "
+        f"estimated remaining {fmt_duration(remaining)} | "
+        f"estimated finish {finish.strftime('%Y-%m-%d %I:%M %p')}"
+    )
+
+
+def start_eta_monitor(
+    suite_dir: Path,
+    selected,
+    manifest: List[Dict],
+    history: Dict,
+    current_config: Dict,
+    run_started_monotonic: float,
+):
+    stop_event = threading.Event()
+
+    def monitor():
+        while not stop_event.wait(ETA_REFRESH_SECONDS):
+            elapsed = time.monotonic() - run_started_monotonic
+            complete, total = selected_completion_counts(suite_dir, selected)
+            samples = completed_runtime_samples(suite_dir, manifest, history)
+            predicted_current = estimate_run_seconds(current_config, samples)
+
+            pending_future = [
+                c
+                for _, c in selected
+                if c["run_name"] != current_config["run_name"]
+                and not is_complete(suite_dir / c["run_name"])
+            ]
+
+            future_seconds = None
+            if samples:
+                future_seconds = 0.0
+                for c in pending_future:
+                    estimate = estimate_run_seconds(c, samples)
+                    if estimate is None:
+                        future_seconds = None
+                        break
+                    future_seconds += estimate
+
+            if predicted_current is None or future_seconds is None:
+                print(
+                    f"\n[ETA] current run elapsed {fmt_duration(elapsed)} | "
+                    f"suite progress {complete}/{total} | "
+                    "suite ETA: learning from completed runs",
+                    flush=True,
+                )
+                continue
+
+            # If a run is taking longer than its historical estimate, do not let
+            # the displayed remaining time collapse to zero. Extend the current
+            # estimate as the run continues.
+            predicted_total_current = max(float(predicted_current), elapsed * 1.25)
+            current_remaining = max(0.0, predicted_total_current - elapsed)
+            suite_remaining = current_remaining + future_seconds
+            finish = datetime.now() + timedelta(seconds=suite_remaining)
+
+            print(
+                f"\n[ETA] current run elapsed {fmt_duration(elapsed)} | "
+                f"current est remaining {fmt_duration(current_remaining)} | "
+                f"suite progress {complete}/{total} | "
+                f"suite est remaining {fmt_duration(suite_remaining)} | "
+                f"finish ~ {finish.strftime('%Y-%m-%d %I:%M %p')}",
+                flush=True,
+            )
+
+    thread = threading.Thread(target=monitor, daemon=True)
+    thread.start()
+    return stop_event, thread
 
 
 def prevent_windows_sleep():
@@ -304,15 +545,22 @@ def main():
             continue
         selected.append((i, c))
 
+    history = load_runtime_history(suite_dir)
+
     print("=" * 100)
     print("THESIS ARCHITECTURE MASTER SUITE")
     print(f"Suite: {suite_dir}")
     print(f"Manifest experiments: {len(manifest)}")
     print(f"Selected this invocation: {len(selected)}")
     print("Rerunning this command after a crash will skip completed runs and resume incomplete ones.")
+    print(f"ETA refresh interval: {ETA_REFRESH_SECONDS} seconds")
     print("=" * 100)
 
+    print_suite_eta(suite_dir, selected, manifest, history, prefix="START")
+
     prevent_windows_sleep()
+    invocation_started = time.monotonic()
+
     try:
         for manifest_index, config in selected:
             run_dir = suite_dir / config["run_name"]
@@ -323,13 +571,27 @@ def main():
                 print(f"[{manifest_index}/{len(manifest)}] SKIP complete: {config['run_name']}")
                 continue
 
+            complete_before, selected_total = selected_completion_counts(suite_dir, selected)
+            pct_before = 100.0 * complete_before / selected_total if selected_total else 100.0
+
             print("\n" + "#" * 100)
             print(f"[{manifest_index}/{len(manifest)}] {config['run_name']}")
             print(f"Phases: {', '.join(config.get('phases', []))}")
+            print(f"Selected-suite progress before run: {complete_before}/{selected_total} ({pct_before:.1f}%)")
+
+            samples = completed_runtime_samples(suite_dir, manifest, history)
+            expected_run = estimate_run_seconds(config, samples)
+            if expected_run is None:
+                print("Expected run duration: unknown until at least one run has completed")
+            else:
+                print(f"Expected run duration from completed-run history: ~{fmt_duration(expected_run)}")
+
+            print_suite_eta(suite_dir, selected, manifest, history, prefix="BEFORE RUN")
             print("#" * 100)
 
             retries = int(settings["max_auto_retries"])
             success = False
+
             for attempt in range(1, retries + 1):
                 cmd = [
                     sys.executable,
@@ -337,17 +599,52 @@ def main():
                     "--run-dir",
                     str(run_dir),
                 ]
-                result = subprocess.run(cmd, cwd=ROOT)
-                if result.returncode == 0 and is_complete(run_dir):
+
+                attempt_started = time.monotonic()
+                monitor_stop, monitor_thread = start_eta_monitor(
+                    suite_dir=suite_dir,
+                    selected=selected,
+                    manifest=manifest,
+                    history=history,
+                    current_config=config,
+                    run_started_monotonic=attempt_started,
+                )
+
+                try:
+                    result = subprocess.run(cmd, cwd=ROOT)
+                finally:
+                    monitor_stop.set()
+                    monitor_thread.join(timeout=2)
+
+                attempt_elapsed = time.monotonic() - attempt_started
+                completed_now = is_complete(run_dir)
+                register_attempt_runtime(
+                    suite_dir=suite_dir,
+                    history=history,
+                    run_name=config["run_name"],
+                    elapsed_seconds=attempt_elapsed,
+                    complete=completed_now,
+                )
+
+                print(
+                    f"Attempt {attempt}/{retries} wall time: "
+                    f"{fmt_duration(attempt_elapsed)}"
+                )
+
+                if result.returncode == 0 and completed_now:
                     success = True
                     break
 
                 print(
                     f"Child ended with code {result.returncode}; "
-                    f"automatic retry {attempt}/{retries}. The next attempt will resume from resume_latest.ckpt."
+                    f"automatic retry {attempt}/{retries}. "
+                    "The next attempt will resume from resume_latest.ckpt."
                 )
+
                 if attempt < retries:
-                    time.sleep(int(settings["retry_delay_seconds"]))
+                    delay = int(settings["retry_delay_seconds"])
+                    print(f"Retrying in {delay} seconds...")
+                    time.sleep(delay)
 
             if not success:
                 print(
@@ -356,14 +653,21 @@ def main():
                 )
 
             update_suite_summary(suite_dir, manifest)
+            print_suite_eta(suite_dir, selected, manifest, history, prefix="UPDATED")
 
     except KeyboardInterrupt:
         print("\nMaster suite interrupted. Re-run the same command to continue.")
     finally:
         update_suite_summary(suite_dir, manifest)
+        save_runtime_history(suite_dir, history)
         restore_windows_sleep()
 
-    print("\nSuite pass finished. Run the same command again at any time; completed trials will be skipped.")
+    invocation_elapsed = time.monotonic() - invocation_started
+    print("\n" + "=" * 100)
+    print(f"Suite pass finished. This invocation ran for {fmt_duration(invocation_elapsed)}.")
+    print_suite_eta(suite_dir, selected, manifest, history, prefix="FINAL")
+    print("Run the same command again at any time; completed trials will be skipped.")
+    print("=" * 100)
 
 
 if __name__ == "__main__":
