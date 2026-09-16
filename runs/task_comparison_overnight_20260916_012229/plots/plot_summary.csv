@@ -1,9 +1,9 @@
-run,task_number,operation,seed,train99,val99,stable99,stable_delay,png
-T1_addition_seed0,1,addition,0,460,23040,23040,22580,C:\Users\Ajay\Documents\Thesis\runs\task_comparison_overnight_20260916_012229\plots\T1_addition_seed0_grokking_curve.png
-T2_subtraction_seed0,2,subtraction,0,550,50560,50560,50010,C:\Users\Ajay\Documents\Thesis\runs\task_comparison_overnight_20260916_012229\plots\T2_subtraction_seed0_grokking_curve.png
-T3_multiplication_seed0,3,multiplication,0,480,22150,23040,22560,C:\Users\Ajay\Documents\Thesis\runs\task_comparison_overnight_20260916_012229\plots\T3_multiplication_seed0_grokking_curve.png
-T4_addition_seed1,4,addition,1,480,28010,28010,27530,C:\Users\Ajay\Documents\Thesis\runs\task_comparison_overnight_20260916_012229\plots\T4_addition_seed1_grokking_curve.png
-T5_subtraction_seed1,5,subtraction,1,560,52600,52600,52040,C:\Users\Ajay\Documents\Thesis\runs\task_comparison_overnight_20260916_012229\plots\T5_subtraction_seed1_grokking_curve.png
-T6_multiplication_seed1,6,multiplication,1,460,22150,22150,21690,C:\Users\Ajay\Documents\Thesis\runs\task_comparison_overnight_20260916_012229\plots\T6_multiplication_seed1_grokking_curve.png
-T7_division_seed1,7,division,1,630,32790,34100,33470,C:\Users\Ajay\Documents\Thesis\runs\task_comparison_overnight_20260916_012229\plots\T7_division_seed1_grokking_curve.png
-T8_division_seed2,8,division,2,630,41510,41510,40880,C:\Users\Ajay\Documents\Thesis\runs\task_comparison_overnight_20260916_012229\plots\T8_division_seed2_grokking_curve.png
+run,description,train_pct,weight_decay,learning_rate,seed,operator,train99,val99,stable99,first_delay,stable_delay,png
+T1_addition_seed0,"Addition mod 97, seed 0",50,0.1,0.001,0,+,460,23040,23040,22580,22580,C:\Users\Ajay\Documents\Thesis\runs\task_comparison_overnight_20260916_012229\plots\T1_addition_seed0_grokking_curve.png
+T2_subtraction_seed0,"Subtraction mod 97, seed 0",50,0.1,0.001,0,-,550,50560,50560,50010,50010,C:\Users\Ajay\Documents\Thesis\runs\task_comparison_overnight_20260916_012229\plots\T2_subtraction_seed0_grokking_curve.png
+T3_multiplication_seed0,"Multiplication mod 97, seed 0",50,0.1,0.001,0,*,480,22150,23040,21670,22560,C:\Users\Ajay\Documents\Thesis\runs\task_comparison_overnight_20260916_012229\plots\T3_multiplication_seed0_grokking_curve.png
+T4_addition_seed1,"Addition mod 97, seed 1",50,0.1,0.001,1,+,480,28010,28010,27530,27530,C:\Users\Ajay\Documents\Thesis\runs\task_comparison_overnight_20260916_012229\plots\T4_addition_seed1_grokking_curve.png
+T5_subtraction_seed1,"Subtraction mod 97, seed 1",50,0.1,0.001,1,-,560,52600,52600,52040,52040,C:\Users\Ajay\Documents\Thesis\runs\task_comparison_overnight_20260916_012229\plots\T5_subtraction_seed1_grokking_curve.png
+T6_multiplication_seed1,"Multiplication mod 97, seed 1",50,0.1,0.001,1,*,460,22150,22150,21690,21690,C:\Users\Ajay\Documents\Thesis\runs\task_comparison_overnight_20260916_012229\plots\T6_multiplication_seed1_grokking_curve.png
+T7_division_seed1,"Division mod 97, seed 1",50,0.1,0.001,1,/,630,32790,34100,32160,33470,C:\Users\Ajay\Documents\Thesis\runs\task_comparison_overnight_20260916_012229\plots\T7_division_seed1_grokking_curve.png
+T8_division_seed2,"Division mod 97, seed 2",50,0.1,0.001,2,/,630,41510,41510,40880,40880,C:\Users\Ajay\Documents\Thesis\runs\task_comparison_overnight_20260916_012229\plots\T8_division_seed2_grokking_curve.png

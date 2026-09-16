@@ -1,0 +1,3 @@
+run,description,train_pct,weight_decay,learning_rate,seed,operator,train99,val99,stable99,first_delay,stable_delay,png
+A_regularised_50pct,"Positive control: division mod 97, 50% training data, weight decay 1",50,1,,0,,1160,3390,,2230,,C:\Users\Ajay\Documents\Thesis\runs\grok_verification_20260914_143850\plots\A_regularised_50pct_grokking_curve.png
+B_high_data_80pct,"High-data control: division mod 97, 80% training data, weight decay 1",80,1,,0,,6000,10800,,4800,,C:\Users\Ajay\Documents\Thesis\runs\grok_verification_20260914_143850\plots\B_high_data_80pct_grokking_curve.png
