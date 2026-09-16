@@ -138,3 +138,16 @@ env.txt
 runs/**/plots/*.pdf
 
 runs/**/*.ckpt
+
+# Thesis experiment recovery / temporary files
+runs/**/checkpoints/
+runs/**/attempts/
+runs/**/progress_state.json
+runs/**/evaluation_history.csv
+runs/**/runtime_history.json
+
+# Generated plot PDFs
+runs/**/plots/*.pdf
+
+# Active thesis architecture experiment suite
+runs/thesis_architecture_suite_v1/

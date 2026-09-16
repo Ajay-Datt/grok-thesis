@@ -55,6 +55,18 @@ def scalar(value):
         return None
 
 
+def format_duration(seconds: Optional[float]) -> str:
+    if seconds is None or not math.isfinite(seconds) or seconds < 0:
+        return "unknown"
+    seconds = int(round(seconds))
+    days, rem = divmod(seconds, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, secs = divmod(rem, 60)
+    if days:
+        return f"{days}d {hours:02d}:{minutes:02d}:{secs:02d}"
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
 def count_parameters(model) -> int:
     return int(sum(p.numel() for p in model.parameters()))
 
@@ -244,6 +256,8 @@ class ResumableResearchCallback(Callback):
         confirmation_success_streak: int,
         post_grok_confirmation_steps: int,
         collapse_threshold_pct: float,
+        max_steps: int,
+        progress_every_steps: int = 500,
     ):
         super().__init__()
         self.run_dir = run_dir
@@ -259,6 +273,14 @@ class ResumableResearchCallback(Callback):
         self.confirmation_success_streak = int(confirmation_success_streak)
         self.post_grok_confirmation_steps = int(post_grok_confirmation_steps)
         self.collapse_threshold_pct = float(collapse_threshold_pct)
+        self.max_steps = int(max_steps)
+        self.progress_every_steps = max(1, int(progress_every_steps))
+
+        self.session_start_time = None
+        self.session_start_step = 0
+        self.last_progress_step = 0
+        self.latest_train_acc = None
+        self.latest_val_acc = None
 
         self.last_checkpoint_step = 0
         if self.checkpoint_state_path.exists():
@@ -306,6 +328,62 @@ class ResumableResearchCallback(Callback):
         self.active_candidate_step = None
         self.confirmation_due_step = None
 
+    def on_train_start(self, trainer, pl_module):
+        self.session_start_time = time.time()
+        self.session_start_step = int(trainer.global_step)
+        self.last_progress_step = self.session_start_step
+        hard_cap_pct = 100.0 * self.session_start_step / max(1, self.max_steps)
+        print(
+            f"[RUN PROGRESS] starting at step {self.session_start_step:,}/{self.max_steps:,} "
+            f"({hard_cap_pct:.2f}% of hard cap)."
+        )
+
+    def _speed_steps_per_second(self, step: int) -> Optional[float]:
+        if self.session_start_time is None:
+            return None
+        elapsed = time.time() - self.session_start_time
+        advanced = step - self.session_start_step
+        if elapsed <= 0 or advanced <= 0:
+            return None
+        return advanced / elapsed
+
+    def print_run_progress(self, trainer) -> None:
+        step = int(trainer.global_step)
+        self.last_progress_step = step
+        speed = self._speed_steps_per_second(step)
+        elapsed = None if self.session_start_time is None else time.time() - self.session_start_time
+        hard_cap_pct = 100.0 * step / max(1, self.max_steps)
+        hard_cap_remaining = max(0, self.max_steps - step)
+        hard_cap_eta = (hard_cap_remaining / speed) if speed else None
+
+        acc_text = ""
+        if self.latest_train_acc is not None or self.latest_val_acc is not None:
+            train_text = "?" if self.latest_train_acc is None else f"{self.latest_train_acc:.2f}%"
+            val_text = "?" if self.latest_val_acc is None else f"{self.latest_val_acc:.2f}%"
+            acc_text = f" | train={train_text} val={val_text}"
+
+        if self.active_candidate_step is not None and self.confirmation_due_step is not None:
+            confirm_total = max(1, self.confirmation_due_step - self.active_candidate_step)
+            confirm_done = min(confirm_total, max(0, step - self.active_candidate_step))
+            confirm_pct = 100.0 * confirm_done / confirm_total
+            confirm_remaining = max(0, self.confirmation_due_step - step)
+            confirm_eta = (confirm_remaining / speed) if speed else None
+            status = (
+                f"candidate={self.active_candidate_step:,} | confirmation "
+                f"{confirm_done:,}/{confirm_total:,} ({confirm_pct:.1f}%) "
+                f"| confirmation ETA {format_duration(confirm_eta)}"
+            )
+        else:
+            status = "no stable-grok candidate yet"
+
+        speed_text = "?" if speed is None else f"{speed:.2f} steps/s"
+        print(
+            f"[RUN PROGRESS] step {step:,}/{self.max_steps:,} "
+            f"({hard_cap_pct:.2f}% of hard cap) | elapsed {format_duration(elapsed)} "
+            f"| {speed_text} | hard-cap ETA {format_duration(hard_cap_eta)}"
+            f"{acc_text} | {status}"
+        )
+
     def save_progress(self, trainer) -> None:
         atomic_json(
             self.progress_path,
@@ -349,6 +427,9 @@ class ResumableResearchCallback(Callback):
             self.save_progress(trainer)
             print(f"[CHECKPOINT] step {step:,} -> {self.latest_ckpt}")
 
+        if step > 0 and step - self.last_progress_step >= self.progress_every_steps:
+            self.print_run_progress(trainer)
+
     def on_validation_end(self, trainer, pl_module):
         metrics = trainer.callback_metrics
         train_acc = scalar(metrics.get("full_train_acc"))
@@ -359,6 +440,8 @@ class ResumableResearchCallback(Callback):
             return
 
         step = int(trainer.global_step)
+        self.latest_train_acc = train_acc
+        self.latest_val_acc = val_acc
         row = {
             "step": step,
             "epoch": int(trainer.current_epoch),
@@ -611,6 +694,8 @@ def main():
         confirmation_success_streak=config["confirmation_success_streak"],
         post_grok_confirmation_steps=config["post_grok_confirmation_steps"],
         collapse_threshold_pct=config["collapse_threshold_pct"],
+        max_steps=config["max_steps"],
+        progress_every_steps=int(config.get("progress_every_steps", 500)),
     )
     callback.reconcile_with_resume_step(resume_step)
 
@@ -630,10 +715,10 @@ def main():
         "max_steps": int(config["max_steps"]),
         "min_steps": 0,
         "max_epochs": int(1e8),
-        "val_check_interval": 1,
+        "val_check_interval": 10,
         "profiler": False,
         "logger": logger,
-        "log_every_n_steps": 1,
+        "log_every_n_steps": 10,
         "flush_logs_every_n_steps": 250,
         "callbacks": [callback],
         "checkpoint_callback": False,
