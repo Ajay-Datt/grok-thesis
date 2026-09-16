@@ -133,3 +133,6 @@ checkpoints
 .vscode
 
 env.txt
+
+# Plot exports
+runs/**/plots/*.pdf
