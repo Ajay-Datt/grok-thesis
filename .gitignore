@@ -151,3 +151,4 @@ runs/**/plots/*.pdf
 
 # Active thesis architecture experiment suite
 runs/thesis_architecture_suite_v1/
+runs/thesis_architecture_confirmation_v1/
